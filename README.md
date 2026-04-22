@@ -23,18 +23,18 @@ Quick Page Translator is a Firefox extension that auto-translates saved websites
 - Shows whether the current website is already saved
 - Offers `Add website` or `Remove website` depending on the current tab
 - Opens the settings page and closes the popup automatically
-- Shows the current translation summary for the active website when available
+- Shows the current translation mode for the active website when available
 
 ## Settings page
 
 The settings page currently includes:
 
-- Auto-translate toggle
 - Page translation mode selector
-- Up to 3 page translation rule rows
+- Up to 3 page translation rule rows when `Specific languages` is selected
 - Ctrl + highlight target selector
 - Original-text-on-highlight toggle for translated pages
 - Saved websites manager
+- Per-saved-website custom page translation settings with a `Follow global page translation` option
 - Import / export tools for settings backup and restore
 
 ## Files

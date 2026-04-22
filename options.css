@@ -136,7 +136,6 @@ body {
 .toggle-row,
 .form-row,
 .list-header,
-.site-item,
 .language-grid {
   display: flex;
   gap: 12px;
@@ -147,10 +146,6 @@ body {
   align-items: center;
   padding: 0;
   color: var(--text);
-}
-
-.toggle-switch-row {
-  padding: 10px 0;
 }
 
 .switch {
@@ -357,15 +352,6 @@ button.secondary:hover {
   gap: 8px;
 }
 
-.site-item {
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 12px;
-}
-
 .site-card {
   display: grid;
   gap: 12px;
@@ -476,7 +462,6 @@ input[type="checkbox"] {
   .page-rule,
   .form-row,
   .list-header,
-  .site-item,
   .tool-row {
     grid-template-columns: 1fr;
     flex-direction: column;

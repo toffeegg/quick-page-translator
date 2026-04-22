@@ -59,8 +59,7 @@ async function initialize() {
   summary.textContent = enabled
     ? getPopupSummary(
         hostname,
-        matchedSite && !matchedSite.followGlobalPageTranslation ? matchedSite.pageTranslationMode : pageTranslationMode,
-        matchedSite && !matchedSite.followGlobalPageTranslation ? matchedSite.pageTranslationRules : pageTranslationRules
+        matchedSite && !matchedSite.followGlobalPageTranslation ? matchedSite.pageTranslationMode : pageTranslationMode
       )
     : `${hostname} is not in your saved sites yet.`;
 }
@@ -290,7 +289,7 @@ function normalizePageTranslationMode(value) {
   return value === "entire-page" ? "entire-page" : TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode;
 }
 
-function getPopupSummary(hostname, mode, rules) {
+function getPopupSummary(hostname, mode) {
   if (mode === "entire-page") {
     return `${hostname} is set to translate Entire Web Page.`;
   }
