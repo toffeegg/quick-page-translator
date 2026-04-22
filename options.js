@@ -1,10 +1,13 @@
 const browserApi = typeof browser !== "undefined" ? browser : chrome;
 
 const MAX_PAGE_TRANSLATION_RULES = 3;
+const STATUS_MESSAGE_DURATION = 3200;
 
 const elements = {
-  autoTranslate: document.getElementById("autoTranslate"),
+  sidebarTabs: Array.from(document.querySelectorAll(".sidebar-tab")),
+  settingsPanels: Array.from(document.querySelectorAll(".settings-panel")),
   pageTranslationMode: document.getElementById("pageTranslationMode"),
+  pageTranslationRulesField: document.getElementById("pageTranslationRulesField"),
   pageTranslationRules: document.getElementById("pageTranslationRules"),
   addPageTarget: document.getElementById("addPageTarget"),
   showOriginalOnTranslatedSelection: document.getElementById("showOriginalOnTranslatedSelection"),
@@ -27,6 +30,7 @@ let state = {
   showOriginalOnTranslatedSelection: TRANSLATOR_DEFAULT_SETTINGS.showOriginalOnTranslatedSelection,
   selectionTargetLanguage: TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage
 };
+let statusTimeoutId = null;
 
 initialize().catch((error) => {
   console.error("Failed to load options", error);
@@ -39,7 +43,7 @@ async function initialize() {
   const stored = await browserApi.storage.sync.get(null);
   const pageTranslationRules = getStoredPageTranslationRules(stored);
   state = {
-    sites: normalizeSites(stored.sites),
+    sites: normalizeSites(Array.isArray(stored.sites) ? stored.sites : TRANSLATOR_DEFAULT_SETTINGS.sites),
     autoTranslate: stored.autoTranslate !== false,
     pageTranslationMode: normalizePageTranslationMode(stored.pageTranslationMode),
     pageTranslationRules,
@@ -50,7 +54,6 @@ async function initialize() {
     )
   };
 
-  elements.autoTranslate.checked = state.autoTranslate;
   elements.pageTranslationMode.value = state.pageTranslationMode;
   elements.showOriginalOnTranslatedSelection.checked = state.showOriginalOnTranslatedSelection;
   elements.selectionTargetLanguage.value = state.selectionTargetLanguage;
@@ -60,15 +63,17 @@ async function initialize() {
 }
 
 function bindEvents() {
-  elements.autoTranslate.addEventListener("change", async () => {
-    state.autoTranslate = elements.autoTranslate.checked;
-    await saveState();
-    setStatus(state.autoTranslate ? "Automatic translation enabled." : "Automatic translation disabled.");
+  elements.sidebarTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      setActiveTab(tab.dataset.tab);
+    });
   });
 
   elements.pageTranslationMode.addEventListener("change", async () => {
     state.pageTranslationMode = normalizePageTranslationMode(elements.pageTranslationMode.value);
+    renderPageTranslationRules();
     await saveState();
+    renderSites();
     setStatus(`Page translation mode set to ${getPageTranslationModeLabel(state.pageTranslationMode)}.`);
   });
 
@@ -81,6 +86,7 @@ function bindEvents() {
     state.pageTranslationRules = [...state.pageTranslationRules, getNextPageTranslationRule(state.pageTranslationRules)];
     renderPageTranslationRules();
     await saveState();
+    renderSites();
     setStatus(`Added page target. ${getPageTargetSummary()}.`);
   });
 
@@ -111,13 +117,13 @@ function bindEvents() {
       return;
     }
 
-    if (state.sites.includes(normalized)) {
+    if (state.sites.some((site) => site.pattern === normalized)) {
       setStatus("That website is already in the list.");
       return;
     }
 
-    state.sites.push(normalized);
-    state.sites.sort();
+    state.sites.push(createSiteSettings(normalized));
+    state.sites.sort((left, right) => left.pattern.localeCompare(right.pattern));
     await saveState();
     renderSites();
     elements.siteInput.value = "";
@@ -125,6 +131,15 @@ function bindEvents() {
   });
 
   elements.clearAll.addEventListener("click", async () => {
+    if (!state.sites.length) {
+      return;
+    }
+
+    const confirmed = window.confirm("Clear all saved websites?");
+    if (!confirmed) {
+      return;
+    }
+
     state.sites = [];
     await saveState();
     renderSites();
@@ -178,71 +193,25 @@ function bindEvents() {
 }
 
 function renderPageTranslationRules() {
-  elements.pageTranslationRules.innerHTML = "";
+  updateGlobalPageTranslationVisibility();
 
-  state.pageTranslationRules.forEach((rule, index) => {
-    const row = document.createElement("div");
-    row.className = "page-rule";
+  if (state.pageTranslationMode !== "specific-languages") {
+    elements.pageTranslationRules.innerHTML = "";
+    elements.addPageTarget.disabled = true;
+    return;
+  }
 
-    const sourceField = document.createElement("label");
-    sourceField.className = "field";
-    const sourceLabel = document.createElement("span");
-    sourceLabel.textContent = "From";
-    const sourceSelect = buildLanguageSelect(rule.sourceLanguage);
-    sourceSelect.addEventListener("change", async () => {
-      state.pageTranslationRules[index].sourceLanguage = normalizeLanguage(
-        sourceSelect.value,
-        state.pageTranslationRules[index].sourceLanguage
-      );
-      if (state.pageTranslationRules[index].sourceLanguage === state.pageTranslationRules[index].targetLanguage) {
-        state.pageTranslationRules[index].targetLanguage = getFallbackTarget(state.pageTranslationRules[index].sourceLanguage);
-      }
-      state.pageTranslationRules = normalizePageTranslationRules(state.pageTranslationRules);
+  renderRuleEditor(
+    elements.pageTranslationRules,
+    state.pageTranslationRules,
+    async (nextRules) => {
+      state.pageTranslationRules = normalizePageTranslationRules(nextRules);
       renderPageTranslationRules();
       await saveState();
+      renderSites();
       setStatus(`Page translation set to ${getPageTargetSummary()}.`);
-    });
-    sourceField.append(sourceLabel, sourceSelect);
-
-    const targetField = document.createElement("label");
-    targetField.className = "field";
-    const targetLabel = document.createElement("span");
-    targetLabel.textContent = "To";
-    const targetSelect = buildLanguageSelect(rule.targetLanguage);
-    targetSelect.addEventListener("change", async () => {
-      state.pageTranslationRules[index].targetLanguage = normalizeLanguage(
-        targetSelect.value,
-        state.pageTranslationRules[index].targetLanguage
-      );
-      if (state.pageTranslationRules[index].targetLanguage === state.pageTranslationRules[index].sourceLanguage) {
-        state.pageTranslationRules[index].sourceLanguage = getFallbackSource(state.pageTranslationRules[index].targetLanguage);
-      }
-      state.pageTranslationRules = normalizePageTranslationRules(state.pageTranslationRules);
-      renderPageTranslationRules();
-      await saveState();
-      setStatus(`Page translation set to ${getPageTargetSummary()}.`);
-    });
-    targetField.append(targetLabel, targetSelect);
-
-    const actionSlot = document.createElement("div");
-    if (index > 0) {
-      const removeButton = document.createElement("button");
-      removeButton.type = "button";
-      removeButton.className = "secondary";
-      removeButton.textContent = "Remove";
-      removeButton.addEventListener("click", async () => {
-        state.pageTranslationRules = state.pageTranslationRules.filter((_, ruleIndex) => ruleIndex !== index);
-        renderPageTranslationRules();
-        await saveState();
-        setStatus(`Removed page target. ${getPageTargetSummary()}.`);
-      });
-      actionSlot.appendChild(removeButton);
     }
-
-    row.append(sourceField, targetField, actionSlot);
-    elements.pageTranslationRules.appendChild(row);
-  });
-
+  );
   elements.addPageTarget.disabled = state.pageTranslationRules.length >= MAX_PAGE_TRANSLATION_RULES;
 }
 
@@ -259,25 +228,136 @@ function renderSites() {
 
   state.sites.forEach((site) => {
     const item = document.createElement("li");
-    item.className = "site-item";
+    item.className = "site-card";
+
+    const header = document.createElement("div");
+    header.className = "site-card-header";
+
+    const meta = document.createElement("div");
+    meta.className = "site-card-meta";
 
     const label = document.createElement("span");
     label.className = "site-pill";
-    label.textContent = site;
+    label.textContent = site.pattern;
+
+    const mode = document.createElement("span");
+    mode.className = "site-card-mode";
+    mode.textContent = site.followGlobalPageTranslation
+      ? "Follows global page translation"
+      : getSiteModeSummary(site);
+
+    meta.append(label, mode);
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "secondary";
     removeButton.textContent = "Delete";
     removeButton.addEventListener("click", async () => {
-      state.sites = state.sites.filter((entry) => entry !== site);
+      const confirmed = window.confirm(`Delete ${site.pattern} from saved websites?`);
+      if (!confirmed) {
+        return;
+      }
+
+      state.sites = state.sites.filter((entry) => entry.pattern !== site.pattern);
       await saveState();
       renderSites();
-      setStatus(`Removed ${site}.`);
+      setStatus(`Removed ${site.pattern}.`);
     });
 
-    item.append(label, removeButton);
+    header.append(meta, removeButton);
+
+    const settings = document.createElement("div");
+    settings.className = "site-settings";
+
+    const followRow = document.createElement("label");
+    followRow.className = "toggle-row site-follow-row";
+    const followText = document.createElement("span");
+    followText.textContent = "Follow global page translation";
+    const followSwitch = document.createElement("span");
+    followSwitch.className = "switch";
+    const followInput = document.createElement("input");
+    followInput.type = "checkbox";
+    followInput.checked = site.followGlobalPageTranslation;
+    const followSlider = document.createElement("span");
+    followSlider.className = "switch-slider";
+    followSwitch.append(followInput, followSlider);
+    followRow.append(followText, followSwitch);
+
+    const modeField = document.createElement("label");
+    modeField.className = "field field-wide";
+    const modeLabel = document.createElement("span");
+    modeLabel.textContent = "Page translation mode";
+    const modeSelect = document.createElement("select");
+    modeSelect.innerHTML = `
+      <option value="specific-languages">Specific languages</option>
+      <option value="entire-page">Entire web page</option>
+    `;
+    modeSelect.value = site.pageTranslationMode;
+    modeField.append(modeLabel, modeSelect);
+
+    const rulesField = document.createElement("div");
+    rulesField.className = "field field-wide";
+    const rulesLabel = document.createElement("span");
+    rulesLabel.textContent = "Page translation targets";
+    const rulesList = document.createElement("div");
+    rulesList.className = "page-rule-list";
+    const addRuleButton = document.createElement("button");
+    addRuleButton.type = "button";
+    addRuleButton.className = "secondary add-rule-button";
+    addRuleButton.textContent = "Add page target";
+    const note = document.createElement("p");
+    note.className = "field-note";
+    note.textContent = "These custom rows are only used when this website is set to Specific languages.";
+    rulesField.append(rulesLabel, rulesList, addRuleButton, note);
+
+    const customSettings = document.createElement("div");
+    customSettings.className = "language-grid";
+    appendSiteCustomSettings(site, customSettings, modeField, rulesField);
+    settings.append(followRow, customSettings);
+    item.append(header, settings);
     elements.siteList.appendChild(item);
+
+    followInput.addEventListener("change", async () => {
+      site.followGlobalPageTranslation = followInput.checked;
+      await saveState();
+      renderSites();
+      setStatus(
+        site.followGlobalPageTranslation
+          ? `${site.pattern} now follows the global page translation settings.`
+          : `${site.pattern} now uses custom page translation settings.`
+      );
+    });
+
+    modeSelect.addEventListener("change", async () => {
+      site.pageTranslationMode = normalizePageTranslationMode(modeSelect.value);
+      await saveState();
+      renderSites();
+      setStatus(`Updated page translation mode for ${site.pattern}.`);
+    });
+
+    addRuleButton.addEventListener("click", async () => {
+      if (site.pageTranslationRules.length >= MAX_PAGE_TRANSLATION_RULES) {
+        setStatus("You can add up to 3 page translation rows per website.");
+        return;
+      }
+
+      site.pageTranslationRules = [
+        ...site.pageTranslationRules,
+        getNextPageTranslationRule(site.pageTranslationRules)
+      ];
+      await saveState();
+      renderSites();
+      setStatus(`Added a custom page target for ${site.pattern}.`);
+    });
+
+    renderRuleEditor(rulesList, site.pageTranslationRules, async (nextRules) => {
+      site.pageTranslationRules = normalizePageTranslationRules(nextRules);
+      await saveState();
+      renderSites();
+      setStatus(`Updated custom page translation settings for ${site.pattern}.`);
+    });
+    addRuleButton.disabled = site.pageTranslationMode !== "specific-languages"
+      || site.pageTranslationRules.length >= MAX_PAGE_TRANSLATION_RULES;
   });
 }
 
@@ -285,7 +365,12 @@ async function saveState() {
   state.pageTranslationRules = normalizePageTranslationRules(state.pageTranslationRules);
 
   await browserApi.storage.sync.set({
-    sites: state.sites,
+    sites: state.sites.map((site) => ({
+      pattern: site.pattern,
+      followGlobalPageTranslation: site.followGlobalPageTranslation,
+      pageTranslationMode: site.pageTranslationMode,
+      pageTranslationRules: site.pageTranslationRules.map((rule) => ({ ...rule }))
+    })),
     autoTranslate: state.autoTranslate,
     pageTranslationMode: state.pageTranslationMode,
     pageTranslationRules: state.pageTranslationRules,
@@ -295,10 +380,31 @@ async function saveState() {
 }
 
 function syncFormFromState() {
-  elements.autoTranslate.checked = state.autoTranslate;
   elements.pageTranslationMode.value = state.pageTranslationMode;
   elements.showOriginalOnTranslatedSelection.checked = state.showOriginalOnTranslatedSelection;
   elements.selectionTargetLanguage.value = state.selectionTargetLanguage;
+  updateGlobalPageTranslationVisibility();
+}
+
+function setActiveTab(tabId) {
+  elements.sidebarTabs.forEach((tab) => {
+    const isActive = tab.dataset.tab === tabId;
+    tab.classList.toggle("active", isActive);
+    tab.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+
+  elements.settingsPanels.forEach((panel) => {
+    const isActive = panel.dataset.panel === tabId;
+    panel.classList.toggle("active", isActive);
+    panel.hidden = !isActive;
+  });
+}
+
+function updateGlobalPageTranslationVisibility() {
+  const showRules = state.pageTranslationMode === "specific-languages";
+  elements.pageTranslationRulesField.hidden = !showRules;
+  elements.pageTranslationRules.hidden = !showRules;
+  elements.addPageTarget.hidden = !showRules;
 }
 
 function populateLanguageSelects() {
@@ -351,7 +457,7 @@ function getStoredPageTranslationRules(stored) {
 
 function normalizePageTranslationRules(rules) {
   if (!Array.isArray(rules) || !rules.length) {
-    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+    return cloneDefaultPageTranslationRules();
   }
 
   const normalized = rules
@@ -381,7 +487,7 @@ function normalizePageTranslationRules(rules) {
     })
     .slice(0, MAX_PAGE_TRANSLATION_RULES);
 
-  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  return normalized.length ? normalized : cloneDefaultPageTranslationRules();
 }
 
 function normalizePageTranslationMode(value) {
@@ -394,10 +500,10 @@ function normalizeSites(sites) {
   }
 
   return sites
-    .map((site) => normalizeSite(site))
+    .map((site) => normalizeSiteEntry(site))
     .filter(Boolean)
-    .filter((site, index, array) => array.indexOf(site) === index)
-    .sort();
+    .filter((site, index, array) => array.findIndex((entry) => entry.pattern === site.pattern) === index)
+    .sort((left, right) => left.pattern.localeCompare(right.pattern));
 }
 
 function normalizeSite(value) {
@@ -463,7 +569,12 @@ function getPageTranslationModeLabel(mode) {
 
 function getSerializableSettings() {
   return {
-    sites: [...state.sites],
+    sites: state.sites.map((site) => ({
+      pattern: site.pattern,
+      followGlobalPageTranslation: site.followGlobalPageTranslation,
+      pageTranslationMode: site.pageTranslationMode,
+      pageTranslationRules: site.pageTranslationRules.map((rule) => ({ ...rule }))
+    })),
     autoTranslate: state.autoTranslate,
     pageTranslationMode: state.pageTranslationMode,
     pageTranslationRules: state.pageTranslationRules.map((rule) => ({ ...rule })),
@@ -487,6 +598,172 @@ function normalizeImportedSettings(settings) {
   };
 }
 
+function renderRuleEditor(container, rules, onChange) {
+  container.innerHTML = "";
+
+  rules.forEach((rule, index) => {
+    const row = document.createElement("div");
+    row.className = "page-rule";
+
+    const sourceField = document.createElement("label");
+    sourceField.className = "field";
+    const sourceLabel = document.createElement("span");
+    sourceLabel.textContent = "From";
+    const sourceSelect = buildLanguageSelect(rule.sourceLanguage);
+    sourceSelect.addEventListener("change", async () => {
+      const nextRules = rules.map((entry, entryIndex) => {
+        if (entryIndex !== index) {
+          return { ...entry };
+        }
+
+        const nextRule = {
+          ...entry,
+          sourceLanguage: normalizeLanguage(sourceSelect.value, entry.sourceLanguage)
+        };
+        if (nextRule.sourceLanguage === nextRule.targetLanguage) {
+          nextRule.targetLanguage = getFallbackTarget(nextRule.sourceLanguage);
+        }
+        return nextRule;
+      });
+      await onChange(nextRules);
+    });
+    sourceField.append(sourceLabel, sourceSelect);
+
+    const targetField = document.createElement("label");
+    targetField.className = "field";
+    const targetLabel = document.createElement("span");
+    targetLabel.textContent = "To";
+    const targetSelect = buildLanguageSelect(rule.targetLanguage);
+    targetSelect.addEventListener("change", async () => {
+      const nextRules = rules.map((entry, entryIndex) => {
+        if (entryIndex !== index) {
+          return { ...entry };
+        }
+
+        const nextRule = {
+          ...entry,
+          targetLanguage: normalizeLanguage(targetSelect.value, entry.targetLanguage)
+        };
+        if (nextRule.targetLanguage === nextRule.sourceLanguage) {
+          nextRule.sourceLanguage = getFallbackSource(nextRule.targetLanguage);
+        }
+        return nextRule;
+      });
+      await onChange(nextRules);
+    });
+    targetField.append(targetLabel, targetSelect);
+
+    const actionSlot = document.createElement("div");
+    if (index > 0) {
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "secondary";
+      removeButton.textContent = "Remove";
+      removeButton.addEventListener("click", async () => {
+        await onChange(rules.filter((_, ruleIndex) => ruleIndex !== index));
+      });
+      actionSlot.appendChild(removeButton);
+    }
+
+    row.append(sourceField, targetField, actionSlot);
+    container.appendChild(row);
+  });
+}
+
+function normalizeSiteEntry(site) {
+  if (typeof site === "string") {
+    const pattern = normalizeSite(site);
+    return pattern ? createSiteSettings(pattern) : null;
+  }
+
+  if (!site || typeof site !== "object") {
+    return null;
+  }
+
+  const pattern = normalizeSite(site.pattern);
+  if (!pattern) {
+    return null;
+  }
+
+  return {
+    pattern,
+    followGlobalPageTranslation: site.followGlobalPageTranslation !== false,
+    pageTranslationMode: normalizePageTranslationMode(site.pageTranslationMode),
+    pageTranslationRules: normalizePageTranslationRules(site.pageTranslationRules)
+  };
+}
+
+function createSiteSettings(pattern) {
+  return {
+    pattern,
+    followGlobalPageTranslation: true,
+    pageTranslationMode: state.pageTranslationMode,
+    pageTranslationRules: normalizePageTranslationRules(state.pageTranslationRules)
+  };
+}
+
+function cloneDefaultPageTranslationRules() {
+  return TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules.map((rule) => ({ ...rule }));
+}
+
+function appendSiteCustomSettings(site, customSettings, modeField, rulesField) {
+  customSettings.innerHTML = "";
+
+  if (site.followGlobalPageTranslation) {
+    return;
+  }
+
+  customSettings.appendChild(modeField);
+
+  if (site.pageTranslationMode === "specific-languages") {
+    customSettings.appendChild(rulesField);
+  }
+}
+
+function getSiteModeSummary(site) {
+  const effectiveSite = site.followGlobalPageTranslation
+    ? {
+        ...site,
+        pageTranslationMode: state.pageTranslationMode,
+        pageTranslationRules: state.pageTranslationRules
+      }
+    : site;
+
+  if (site.followGlobalPageTranslation) {
+    return `Global: ${getModeSummaryText(effectiveSite.pageTranslationMode, effectiveSite.pageTranslationRules)}`;
+  }
+
+  return `Custom: ${getModeSummaryText(effectiveSite.pageTranslationMode, effectiveSite.pageTranslationRules)}`;
+}
+
+function getModeSummaryText(mode, rules) {
+  if (mode === "entire-page") {
+    const targets = rules
+      .map((rule) => getLanguageLabel(rule.targetLanguage))
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .join(" / ");
+    return `entire page -> ${targets}`;
+  }
+
+  return rules
+    .map((rule) => `${getLanguageLabel(rule.sourceLanguage)} -> ${getLanguageLabel(rule.targetLanguage)}`)
+    .join(" | ");
+}
+
 function setStatus(message) {
   elements.status.textContent = message;
+
+  if (statusTimeoutId !== null) {
+    window.clearTimeout(statusTimeoutId);
+    statusTimeoutId = null;
+  }
+
+  if (!message) {
+    return;
+  }
+
+  statusTimeoutId = window.setTimeout(() => {
+    elements.status.textContent = "";
+    statusTimeoutId = null;
+  }, STATUS_MESSAGE_DURATION);
 }

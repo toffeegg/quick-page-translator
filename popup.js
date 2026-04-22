@@ -1,7 +1,6 @@
 const browserApi = typeof browser !== "undefined" ? browser : chrome;
 
 const summary = document.getElementById("summary");
-const hostnameLabel = document.getElementById("hostname");
 const toggleSite = document.getElementById("toggleSite");
 const toggleAutoTranslate = document.getElementById("toggleAutoTranslate");
 const refreshPage = document.getElementById("refreshPage");
@@ -18,7 +17,6 @@ const popupState = {
 initialize().catch((error) => {
   console.error("Failed to load popup", error);
   summary.textContent = "Unable to read the current tab.";
-  hostnameLabel.hidden = true;
   toggleSite.hidden = true;
   refreshPage.hidden = true;
 });
@@ -28,7 +26,8 @@ async function initialize() {
   const hostname = getTabHostname(tab?.url);
   const settings = await browserApi.storage.sync.get(TRANSLATOR_DEFAULT_SETTINGS);
   const sites = normalizeSites(settings.sites);
-  const enabled = sites.some((site) => matchesHost(hostname, site));
+  const matchedSite = sites.find((site) => matchesHost(hostname, site.pattern));
+  const enabled = Boolean(matchedSite);
   const pageTranslationMode = normalizePageTranslationMode(settings.pageTranslationMode);
   const pageTranslationRules = getStoredPageTranslationRules(settings);
   const selectionTargetLanguage = normalizeLanguage(
@@ -44,14 +43,11 @@ async function initialize() {
 
   if (!hostname) {
     summary.textContent = "Open a normal web page to use the translator.";
-    hostnameLabel.hidden = true;
     toggleSite.hidden = true;
     syncAutoTranslateControls();
     return;
   }
 
-  hostnameLabel.textContent = hostname;
-  hostnameLabel.hidden = false;
   syncToggleButton();
   syncAutoTranslateControls();
 
@@ -61,7 +57,11 @@ async function initialize() {
   }
 
   summary.textContent = enabled
-    ? getPopupSummary(hostname, pageTranslationMode, pageTranslationRules)
+    ? getPopupSummary(
+        hostname,
+        matchedSite && !matchedSite.followGlobalPageTranslation ? matchedSite.pageTranslationMode : pageTranslationMode,
+        matchedSite && !matchedSite.followGlobalPageTranslation ? matchedSite.pageTranslationRules : pageTranslationRules
+      )
     : `${hostname} is not in your saved sites yet.`;
 }
 
@@ -75,10 +75,10 @@ toggleSite.addEventListener("click", async () => {
     return;
   }
 
-  const isSaved = popupState.sites.includes(popupState.normalizedHostname);
+  const isSaved = popupState.sites.some((site) => site.pattern === popupState.normalizedHostname);
   popupState.sites = isSaved
-    ? popupState.sites.filter((site) => site !== popupState.normalizedHostname)
-    : [...popupState.sites, popupState.normalizedHostname].sort();
+    ? popupState.sites.filter((site) => site.pattern !== popupState.normalizedHostname)
+    : [...popupState.sites, createSiteSettings(popupState.normalizedHostname)].sort((left, right) => left.pattern.localeCompare(right.pattern));
 
   await browserApi.storage.sync.set({ sites: popupState.sites });
   syncToggleButton();
@@ -103,7 +103,7 @@ toggleAutoTranslate.addEventListener("click", async () => {
     return;
   }
 
-  const isSaved = popupState.sites.some((site) => matchesHost(popupState.hostname, site));
+  const isSaved = popupState.sites.some((site) => matchesHost(popupState.hostname, site.pattern));
   summary.textContent = isSaved
     ? `${popupState.hostname} will auto-translate again after refresh or on your next visit.`
     : `${popupState.hostname} is not in your saved sites yet.`;
@@ -124,7 +124,7 @@ function syncToggleButton() {
     return;
   }
 
-  const isSaved = popupState.sites.includes(popupState.normalizedHostname);
+  const isSaved = popupState.sites.some((site) => matchesHost(popupState.hostname, site.pattern));
   toggleSite.hidden = false;
   toggleSite.textContent = isSaved ? "Remove website" : "Add website";
   toggleSite.classList.toggle("danger", isSaved);
@@ -160,10 +160,10 @@ function normalizeSites(sites) {
   }
 
   return sites
-    .map((site) => normalizeSite(site))
+    .map((site) => normalizeSiteEntry(site))
     .filter(Boolean)
-    .filter((site, index, array) => array.indexOf(site) === index)
-    .sort();
+    .filter((site, index, array) => array.findIndex((entry) => entry.pattern === site.pattern) === index)
+    .sort((left, right) => left.pattern.localeCompare(right.pattern));
 }
 
 function normalizeSite(value) {
@@ -183,6 +183,38 @@ function normalizeSite(value) {
 
   const hostnamePattern = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/;
   return hostnamePattern.test(cleaned) ? cleaned : "";
+}
+
+function normalizeSiteEntry(site) {
+  if (typeof site === "string") {
+    const pattern = normalizeSite(site);
+    return pattern ? createSiteSettings(pattern) : null;
+  }
+
+  if (!site || typeof site !== "object") {
+    return null;
+  }
+
+  const pattern = normalizeSite(site.pattern);
+  if (!pattern) {
+    return null;
+  }
+
+  return {
+    pattern,
+    followGlobalPageTranslation: site.followGlobalPageTranslation !== false,
+    pageTranslationMode: normalizePageTranslationMode(site.pageTranslationMode),
+    pageTranslationRules: normalizePageTranslationRules(site.pageTranslationRules)
+  };
+}
+
+function createSiteSettings(pattern) {
+  return {
+    pattern,
+    followGlobalPageTranslation: true,
+    pageTranslationMode: TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode,
+    pageTranslationRules: cloneDefaultPageTranslationRules()
+  };
 }
 
 function getTabHostname(url) {
@@ -230,7 +262,7 @@ function getStoredPageTranslationRules(stored) {
 
 function normalizePageTranslationRules(rules) {
   if (!Array.isArray(rules) || !rules.length) {
-    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+    return cloneDefaultPageTranslationRules();
   }
 
   const normalized = rules
@@ -251,7 +283,7 @@ function normalizePageTranslationRules(rules) {
     })
     .slice(0, 3);
 
-  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  return normalized.length ? normalized : cloneDefaultPageTranslationRules();
 }
 
 function normalizePageTranslationMode(value) {
@@ -260,15 +292,12 @@ function normalizePageTranslationMode(value) {
 
 function getPopupSummary(hostname, mode, rules) {
   if (mode === "entire-page") {
-    const targets = rules
-      .map((rule) => rule.targetLanguage)
-      .filter((value, index, array) => array.indexOf(value) === index)
-      .map(getLanguageLabel)
-      .join(" / ");
-    return `${hostname} will translate the entire page to ${targets}.`;
+    return `${hostname} is set to translate Entire Web Page.`;
   }
 
-  return `${hostname} is set to translate ${rules
-    .map((rule) => `${getLanguageLabel(rule.sourceLanguage)} -> ${getLanguageLabel(rule.targetLanguage)}`)
-    .join(" | ")}.`;
+  return `${hostname} is set to translate Specific Languages.`;
+}
+
+function cloneDefaultPageTranslationRules() {
+  return TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules.map((rule) => ({ ...rule }));
 }

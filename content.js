@@ -28,8 +28,9 @@ async function initialize() {
 
 async function loadSettings() {
   const stored = await browserApi.storage.sync.get(null);
+  const sites = normalizeSites(stored.sites);
   return {
-    sites: Array.isArray(stored.sites) ? stored.sites : TRANSLATOR_DEFAULT_SETTINGS.sites,
+    sites,
     autoTranslate: stored.autoTranslate !== false,
     pageTranslationMode: normalizePageTranslationMode(stored.pageTranslationMode),
     pageTranslationRules: getStoredPageTranslationRules(stored),
@@ -48,7 +49,7 @@ function listenForSettingChanges() {
     }
 
     if (changes.sites) {
-      cachedSettings.sites = Array.isArray(changes.sites.newValue) ? changes.sites.newValue : [];
+      cachedSettings.sites = normalizeSites(changes.sites.newValue);
     }
 
     if (changes.autoTranslate) {
@@ -92,11 +93,26 @@ function listenForSettingChanges() {
 }
 
 function shouldAutoTranslate() {
-  return cachedSettings.autoTranslate && isSiteEnabled(window.location.hostname, cachedSettings.sites);
+  return cachedSettings.autoTranslate && Boolean(getCurrentSiteSettings());
 }
 
-function isSiteEnabled(hostname, sites) {
-  return sites.some((pattern) => matchSitePattern(hostname, pattern));
+function getCurrentSiteSettings() {
+  const matchedSite = cachedSettings.sites.find((site) => matchSitePattern(window.location.hostname, site.pattern));
+  if (!matchedSite) {
+    return null;
+  }
+
+  if (matchedSite.followGlobalPageTranslation) {
+    return {
+      pageTranslationMode: cachedSettings.pageTranslationMode,
+      pageTranslationRules: cachedSettings.pageTranslationRules
+    };
+  }
+
+  return {
+    pageTranslationMode: matchedSite.pageTranslationMode,
+    pageTranslationRules: matchedSite.pageTranslationRules
+  };
 }
 
 function matchSitePattern(hostname, pattern) {
@@ -368,14 +384,19 @@ function matchesSourceLanguage(text, languageCode) {
 }
 
 function getTranslationRequestForText(text) {
-  if (cachedSettings.pageTranslationMode === "entire-page") {
-    const targetLanguages = getUniqueTargetLanguages(cachedSettings.pageTranslationRules);
+  const currentSiteSettings = getCurrentSiteSettings();
+  if (!currentSiteSettings) {
+    return null;
+  }
+
+  if (currentSiteSettings.pageTranslationMode === "entire-page") {
+    const targetLanguages = getUniqueTargetLanguages(currentSiteSettings.pageTranslationRules);
     return targetLanguages.length
       ? { sourceLanguage: "auto", targetLanguages }
       : null;
   }
 
-  const matchingRules = cachedSettings.pageTranslationRules.filter((rule) => {
+  const matchingRules = currentSiteSettings.pageTranslationRules.filter((rule) => {
     return matchesSourceLanguage(text, rule.sourceLanguage);
   });
 
@@ -463,6 +484,66 @@ function normalizeLanguage(value, fallback) {
   return validCodes.includes(value) ? value : fallback;
 }
 
+function normalizeSites(sites) {
+  if (!Array.isArray(sites)) {
+    return [];
+  }
+
+  return sites
+    .map((site) => normalizeSiteEntry(site))
+    .filter(Boolean)
+    .filter((site, index, array) => array.findIndex((entry) => entry.pattern === site.pattern) === index);
+}
+
+function normalizeSiteEntry(site) {
+  if (typeof site === "string") {
+    const pattern = normalizeSitePattern(site);
+    return pattern
+      ? {
+          pattern,
+          followGlobalPageTranslation: true,
+          pageTranslationMode: TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode,
+          pageTranslationRules: cloneDefaultPageTranslationRules()
+        }
+      : null;
+  }
+
+  if (!site || typeof site !== "object") {
+    return null;
+  }
+
+  const pattern = normalizeSitePattern(site.pattern);
+  if (!pattern) {
+    return null;
+  }
+
+  return {
+    pattern,
+    followGlobalPageTranslation: site.followGlobalPageTranslation !== false,
+    pageTranslationMode: normalizePageTranslationMode(site.pageTranslationMode),
+    pageTranslationRules: normalizePageTranslationRules(site.pageTranslationRules)
+  };
+}
+
+function normalizeSitePattern(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const hostnamePattern = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  return hostnamePattern.test(cleaned) ? cleaned : "";
+}
+
 function getLanguageLabel(code) {
   const match = TRANSLATOR_LANGUAGES.find((language) => language.code === code);
   return match ? match.label : "";
@@ -496,7 +577,7 @@ function getStoredPageTranslationRules(stored) {
 
 function normalizePageTranslationRules(rules) {
   if (!Array.isArray(rules) || !rules.length) {
-    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+    return cloneDefaultPageTranslationRules();
   }
 
   const normalized = rules
@@ -526,7 +607,7 @@ function normalizePageTranslationRules(rules) {
     })
     .slice(0, 3);
 
-  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  return normalized.length ? normalized : cloneDefaultPageTranslationRules();
 }
 
 function normalizePageTranslationMode(value) {
@@ -535,4 +616,8 @@ function normalizePageTranslationMode(value) {
 
 function getFallbackTarget(sourceLanguage) {
   return sourceLanguage === "en" ? "ko" : "en";
+}
+
+function cloneDefaultPageTranslationRules() {
+  return TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules.map((rule) => ({ ...rule }));
 }

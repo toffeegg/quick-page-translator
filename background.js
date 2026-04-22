@@ -4,7 +4,7 @@ async function ensureDefaults() {
   const stored = await browserApi.storage.sync.get(null);
   const pageTranslationRules = getStoredPageTranslationRules(stored);
   await browserApi.storage.sync.set({
-    sites: Array.isArray(stored.sites) ? stored.sites : TRANSLATOR_DEFAULT_SETTINGS.sites,
+    sites: normalizeSites(stored.sites),
     autoTranslate: stored.autoTranslate !== false,
     pageTranslationMode: normalizePageTranslationMode(stored.pageTranslationMode),
     pageTranslationRules,
@@ -119,6 +119,66 @@ function normalizeLanguage(value, fallback) {
   return validCodes.includes(value) ? value : fallback;
 }
 
+function normalizeSites(sites) {
+  if (!Array.isArray(sites)) {
+    return TRANSLATOR_DEFAULT_SETTINGS.sites.map((site) => normalizeSiteEntry(site)).filter(Boolean);
+  }
+
+  return sites
+    .map((site) => normalizeSiteEntry(site))
+    .filter(Boolean)
+    .filter((site, index, array) => array.findIndex((entry) => entry.pattern === site.pattern) === index);
+}
+
+function normalizeSiteEntry(site) {
+  if (typeof site === "string") {
+    const pattern = normalizeSitePattern(site);
+    return pattern
+      ? {
+          pattern,
+          followGlobalPageTranslation: true,
+          pageTranslationMode: TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode,
+          pageTranslationRules: cloneDefaultPageTranslationRules()
+        }
+      : null;
+  }
+
+  if (!site || typeof site !== "object") {
+    return null;
+  }
+
+  const pattern = normalizeSitePattern(site.pattern);
+  if (!pattern) {
+    return null;
+  }
+
+  return {
+    pattern,
+    followGlobalPageTranslation: site.followGlobalPageTranslation !== false,
+    pageTranslationMode: normalizePageTranslationMode(site.pageTranslationMode),
+    pageTranslationRules: normalizePageTranslationRules(site.pageTranslationRules)
+  };
+}
+
+function normalizeSitePattern(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const hostnamePattern = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  return hostnamePattern.test(cleaned) ? cleaned : "";
+}
+
 function normalizeSourceLanguage(value) {
   return value === "auto"
     ? "auto"
@@ -169,7 +229,7 @@ function getStoredPageTranslationRules(stored) {
 
 function normalizePageTranslationRules(rules) {
   if (!Array.isArray(rules) || !rules.length) {
-    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+    return cloneDefaultPageTranslationRules();
   }
 
   const normalized = rules
@@ -199,7 +259,7 @@ function normalizePageTranslationRules(rules) {
     })
     .slice(0, 3);
 
-  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  return normalized.length ? normalized : cloneDefaultPageTranslationRules();
 }
 
 function normalizePageTranslationMode(value) {
@@ -212,4 +272,8 @@ function combineTranslations(translations) {
 
 function getFallbackTarget(sourceLanguage) {
   return sourceLanguage === "en" ? "ko" : "en";
+}
+
+function cloneDefaultPageTranslationRules() {
+  return TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules.map((rule) => ({ ...rule }));
 }

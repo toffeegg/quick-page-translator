@@ -15,15 +15,16 @@
         <p class="intro">Choose how pages translate, manage saved websites, and fine-tune what Ctrl + highlight shows.</p>
       </header>
 
-      <section class="group compact-group">
-        <label class="toggle-row">
-          <span>Auto-translate saved sites</span>
-          <input id="autoTranslate" type="checkbox">
-        </label>
-      </section>
+      <section class="settings-layout">
+        <aside class="settings-sidebar" aria-label="Settings sections">
+          <button type="button" class="sidebar-tab active" data-tab="page-translation">Page Translation</button>
+          <button type="button" class="sidebar-tab" data-tab="highlight-behavior">Highlight Behavior</button>
+          <button type="button" class="sidebar-tab" data-tab="saved-websites">Saved Websites</button>
+          <button type="button" class="sidebar-tab" data-tab="import-export">Import / Export</button>
+        </aside>
 
-      <section class="settings-grid">
-        <section class="settings-card">
+        <section class="settings-panels">
+          <section class="settings-card settings-panel active" data-panel="page-translation">
           <div class="section-head">
             <h2>Page Translation</h2>
             <p>Set how the extension translates page content.</p>
@@ -36,16 +37,16 @@
                 <option value="entire-page">Entire web page</option>
               </select>
             </div>
-            <div class="field field-wide">
+            <div id="pageTranslationRulesField" class="field field-wide">
               <span>Page translation targets</span>
               <div id="pageTranslationRules" class="page-rule-list"></div>
               <button id="addPageTarget" type="button" class="secondary add-rule-button">Add page target</button>
-              <p class="field-note">Add up to 3 translation rows. Specific languages mode translates matching source text. Entire web page mode translates the whole page into the selected target languages.</p>
+              <p class="field-note">Add up to 3 translation rows. These are only used when the page translation mode is set to Specific languages.</p>
             </div>
           </div>
-        </section>
+          </section>
 
-        <section class="settings-card">
+          <section class="settings-card settings-panel" data-panel="highlight-behavior" hidden>
           <div class="section-head">
             <h2>Highlight Behavior</h2>
             <p>Choose what Ctrl + highlight returns.</p>
@@ -60,9 +61,9 @@
               <input id="showOriginalOnTranslatedSelection" type="checkbox">
             </label>
           </div>
-        </section>
+          </section>
 
-        <section class="settings-card">
+          <section class="settings-card settings-panel" data-panel="saved-websites" hidden>
           <div class="section-head">
             <h2>Saved Websites</h2>
             <p>Only saved sites auto-translate.</p>
@@ -78,9 +79,9 @@
             <button id="clearAll" type="button" class="secondary">Clear</button>
           </div>
           <ul id="siteList" class="site-list"></ul>
-        </section>
+          </section>
 
-        <section class="settings-card">
+          <section class="settings-card settings-panel" data-panel="import-export" hidden>
           <div class="section-head">
             <h2>Import / Export</h2>
             <p>Back up or restore websites and translator preferences.</p>
@@ -90,6 +91,7 @@
             <button id="importSettings" type="button" class="secondary">Import settings</button>
             <input id="importFile" type="file" accept="application/json" hidden>
           </div>
+          </section>
         </section>
       </section>
 
