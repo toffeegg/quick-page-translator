@@ -7,6 +7,7 @@ let cachedSettings = null;
 let isTranslating = false;
 let observer = null;
 let translatedNodes = new WeakSet();
+let originalNodeTexts = new WeakMap();
 let overlay = null;
 
 initialize().catch((error) => {
@@ -26,12 +27,13 @@ async function initialize() {
 }
 
 async function loadSettings() {
-  const stored = await browserApi.storage.sync.get(TRANSLATOR_DEFAULT_SETTINGS);
+  const stored = await browserApi.storage.sync.get(null);
   return {
     sites: Array.isArray(stored.sites) ? stored.sites : TRANSLATOR_DEFAULT_SETTINGS.sites,
     autoTranslate: stored.autoTranslate !== false,
-    sourceLanguage: normalizeLanguage(stored.sourceLanguage, TRANSLATOR_DEFAULT_SETTINGS.sourceLanguage),
-    targetLanguage: normalizeLanguage(stored.targetLanguage, TRANSLATOR_DEFAULT_SETTINGS.targetLanguage),
+    pageTranslationMode: normalizePageTranslationMode(stored.pageTranslationMode),
+    pageTranslationRules: getStoredPageTranslationRules(stored),
+    showOriginalOnTranslatedSelection: stored.showOriginalOnTranslatedSelection !== false,
     selectionTargetLanguage: normalizeLanguage(
       stored.selectionTargetLanguage,
       TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage
@@ -53,18 +55,12 @@ function listenForSettingChanges() {
       cachedSettings.autoTranslate = changes.autoTranslate.newValue !== false;
     }
 
-    if (changes.sourceLanguage) {
-      cachedSettings.sourceLanguage = normalizeLanguage(
-        changes.sourceLanguage.newValue,
-        TRANSLATOR_DEFAULT_SETTINGS.sourceLanguage
-      );
+    if (changes.pageTranslationMode) {
+      cachedSettings.pageTranslationMode = normalizePageTranslationMode(changes.pageTranslationMode.newValue);
     }
 
-    if (changes.targetLanguage) {
-      cachedSettings.targetLanguage = normalizeLanguage(
-        changes.targetLanguage.newValue,
-        TRANSLATOR_DEFAULT_SETTINGS.targetLanguage
-      );
+    if (changes.pageTranslationRules) {
+      cachedSettings.pageTranslationRules = normalizePageTranslationRules(changes.pageTranslationRules.newValue);
     }
 
     if (changes.selectionTargetLanguage) {
@@ -72,6 +68,10 @@ function listenForSettingChanges() {
         changes.selectionTargetLanguage.newValue,
         TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage
       );
+    }
+
+    if (changes.showOriginalOnTranslatedSelection) {
+      cachedSettings.showOriginalOnTranslatedSelection = changes.showOriginalOnTranslatedSelection.newValue !== false;
     }
 
     const enabledForSite = shouldAutoTranslate();
@@ -137,23 +137,27 @@ async function translateVisibleDocument() {
 
     const batches = chunkNodes(textNodes, MAX_BATCH_SIZE);
     for (const batch of batches) {
-      const texts = batch.map((node) => node.textContent.trim()).filter(Boolean);
-      if (!texts.length) {
+      const items = batch
+        .map(({ node, request }) => ({
+          text: node.textContent.trim(),
+          sourceLanguage: request.sourceLanguage,
+          targetLanguages: request.targetLanguages
+        }))
+        .filter((item) => item.text);
+
+      if (!items.length) {
         continue;
       }
 
       const { translations } = await browserApi.runtime.sendMessage({
         type: "translate-text-batch",
-        payload: {
-          texts,
-          sourceLanguage: cachedSettings.sourceLanguage,
-          targetLanguage: cachedSettings.targetLanguage
-        }
+        payload: { items }
       });
 
-      batch.forEach((node, index) => {
+      batch.forEach(({ node }, index) => {
         const translated = translations?.[index];
         if (translated && translated !== node.textContent.trim()) {
+          originalNodeTexts.set(node, node.textContent);
           node.textContent = preserveSpacing(node.textContent, translated);
         }
       });
@@ -186,11 +190,15 @@ function collectTranslatableNodes(root) {
         return NodeFilter.FILTER_REJECT;
       }
 
-      if (value.trim().length > MAX_TEXT_LENGTH || !matchesSourceLanguage(value, cachedSettings.sourceLanguage)) {
+      if (value.trim().length > MAX_TEXT_LENGTH) {
         return NodeFilter.FILTER_REJECT;
       }
 
       if (translatedNodes.has(node)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      if (!getTranslationRequestForText(value)) {
         return NodeFilter.FILTER_REJECT;
       }
 
@@ -203,7 +211,10 @@ function collectTranslatableNodes(root) {
 
   while (currentNode) {
     translatedNodes.add(currentNode);
-    nodes.push(currentNode);
+    const request = getTranslationRequestForText(currentNode.textContent);
+    if (request) {
+      nodes.push({ node: currentNode, request });
+    }
     currentNode = walker.nextNode();
   }
 
@@ -258,6 +269,12 @@ async function handleSelectionGesture(event) {
     return;
   }
 
+  const originalSelection = getOriginalSelectionText();
+  if (originalSelection) {
+    showSelectionOverlay(event.clientX, event.clientY, originalSelection, "original");
+    return;
+  }
+
   const selectedText = window.getSelection()?.toString().trim() ?? "";
   if (!selectedText) {
     return;
@@ -303,8 +320,8 @@ function showSelectionOverlay(x, y, translation, detectedLanguage) {
     document.documentElement.appendChild(overlay);
   }
 
-  const detectedLabel = getLanguageLabel(detectedLanguage);
-  overlay.textContent = detectedLabel ? `${detectedLabel} -> ${getLanguageLabel(cachedSettings.selectionTargetLanguage)}\n${translation}` : translation;
+  const overlayTitle = getOverlayTitle(detectedLanguage);
+  overlay.textContent = overlayTitle ? `${overlayTitle}\n${translation}` : translation;
   overlay.style.left = `${Math.min(x + 12, window.innerWidth - 340)}px`;
   overlay.style.top = `${Math.min(y + 12, window.innerHeight - 120)}px`;
   overlay.style.opacity = "1";
@@ -350,6 +367,97 @@ function matchesSourceLanguage(text, languageCode) {
   return regex ? regex.test(value) : true;
 }
 
+function getTranslationRequestForText(text) {
+  if (cachedSettings.pageTranslationMode === "entire-page") {
+    const targetLanguages = getUniqueTargetLanguages(cachedSettings.pageTranslationRules);
+    return targetLanguages.length
+      ? { sourceLanguage: "auto", targetLanguages }
+      : null;
+  }
+
+  const matchingRules = cachedSettings.pageTranslationRules.filter((rule) => {
+    return matchesSourceLanguage(text, rule.sourceLanguage);
+  });
+
+  if (!matchingRules.length) {
+    return null;
+  }
+
+  return {
+    sourceLanguage: matchingRules[0].sourceLanguage,
+    targetLanguages: getUniqueTargetLanguages(matchingRules, matchingRules[0].sourceLanguage)
+  };
+}
+
+function getUniqueTargetLanguages(rules, sourceLanguage = "auto") {
+  return rules
+    .map((rule) => rule.targetLanguage)
+    .filter((targetLanguage) => sourceLanguage === "auto" || targetLanguage !== sourceLanguage)
+    .filter((targetLanguage, index, array) => array.indexOf(targetLanguage) === index)
+    .slice(0, 3);
+}
+
+function getOriginalSelectionText() {
+  if (!cachedSettings.showOriginalOnTranslatedSelection) {
+    return "";
+  }
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return "";
+  }
+
+  const range = selection.getRangeAt(0);
+  const textNodes = getTextNodesInRange(range);
+  if (!textNodes.length) {
+    return "";
+  }
+
+  const originalSegments = textNodes
+    .map((node) => originalNodeTexts.get(node))
+    .filter((value) => typeof value === "string" && value.trim());
+
+  if (!originalSegments.length) {
+    return "";
+  }
+
+  return originalSegments.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function getTextNodesInRange(range) {
+  const nodes = [];
+  const root = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+    ? range.commonAncestorContainer.parentNode
+    : range.commonAncestorContainer;
+
+  if (!root) {
+    return nodes;
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+
+  let currentNode = walker.nextNode();
+  while (currentNode) {
+    nodes.push(currentNode);
+    currentNode = walker.nextNode();
+  }
+
+  return nodes;
+}
+
+function getOverlayTitle(detectedLanguage) {
+  if (detectedLanguage === "original") {
+    return "Original text";
+  }
+
+  const detectedLabel = getLanguageLabel(detectedLanguage);
+  return detectedLabel ? `${detectedLabel} -> ${getLanguageLabel(cachedSettings.selectionTargetLanguage)}` : "";
+}
+
 function normalizeLanguage(value, fallback) {
   const validCodes = TRANSLATOR_LANGUAGES.map((language) => language.code);
   return validCodes.includes(value) ? value : fallback;
@@ -358,4 +466,73 @@ function normalizeLanguage(value, fallback) {
 function getLanguageLabel(code) {
   const match = TRANSLATOR_LANGUAGES.find((language) => language.code === code);
   return match ? match.label : "";
+}
+
+function getStoredPageTranslationRules(stored) {
+  if (Array.isArray(stored.pageTranslationRules) && stored.pageTranslationRules.length) {
+    return normalizePageTranslationRules(stored.pageTranslationRules);
+  }
+
+  const legacySourceLanguage = normalizeLanguage(
+    stored.sourceLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+  );
+  const legacyTargetLanguage = normalizeLanguage(
+    stored.targetLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+  );
+  const additionalTargetLanguages = Array.isArray(stored.additionalTargetLanguages)
+    ? stored.additionalTargetLanguages
+    : [];
+
+  return normalizePageTranslationRules([
+    { sourceLanguage: legacySourceLanguage, targetLanguage: legacyTargetLanguage },
+    ...additionalTargetLanguages.map((targetLanguage) => ({
+      sourceLanguage: legacySourceLanguage,
+      targetLanguage
+    }))
+  ]);
+}
+
+function normalizePageTranslationRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) {
+    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  }
+
+  const normalized = rules
+    .map((rule) => ({
+      sourceLanguage: normalizeLanguage(
+        rule?.sourceLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+      ),
+      targetLanguage: normalizeLanguage(
+        rule?.targetLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+      )
+    }))
+    .map((rule) => {
+      if (rule.sourceLanguage === rule.targetLanguage) {
+        return {
+          sourceLanguage: rule.sourceLanguage,
+          targetLanguage: getFallbackTarget(rule.sourceLanguage)
+        };
+      }
+      return rule;
+    })
+    .filter((rule, index, array) => {
+      return array.findIndex((entry) => {
+        return entry.sourceLanguage === rule.sourceLanguage && entry.targetLanguage === rule.targetLanguage;
+      }) === index;
+    })
+    .slice(0, 3);
+
+  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+}
+
+function normalizePageTranslationMode(value) {
+  return value === "entire-page" ? "entire-page" : TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode;
+}
+
+function getFallbackTarget(sourceLanguage) {
+  return sourceLanguage === "en" ? "ko" : "en";
 }

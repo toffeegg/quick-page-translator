@@ -29,8 +29,8 @@ async function initialize() {
   const settings = await browserApi.storage.sync.get(TRANSLATOR_DEFAULT_SETTINGS);
   const sites = normalizeSites(settings.sites);
   const enabled = sites.some((site) => matchesHost(hostname, site));
-  const sourceLanguage = normalizeLanguage(settings.sourceLanguage, TRANSLATOR_DEFAULT_SETTINGS.sourceLanguage);
-  const targetLanguage = normalizeLanguage(settings.targetLanguage, TRANSLATOR_DEFAULT_SETTINGS.targetLanguage);
+  const pageTranslationMode = normalizePageTranslationMode(settings.pageTranslationMode);
+  const pageTranslationRules = getStoredPageTranslationRules(settings);
   const selectionTargetLanguage = normalizeLanguage(
     settings.selectionTargetLanguage,
     TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage
@@ -61,7 +61,7 @@ async function initialize() {
   }
 
   summary.textContent = enabled
-    ? `${hostname} is set to translate ${getLanguageLabel(sourceLanguage)} -> ${getLanguageLabel(targetLanguage)}.`
+    ? getPopupSummary(hostname, pageTranslationMode, pageTranslationRules)
     : `${hostname} is not in your saved sites yet.`;
 }
 
@@ -200,4 +200,75 @@ function getTabHostname(url) {
 
 function getLanguageLabel(code) {
   return TRANSLATOR_LANGUAGES.find((language) => language.code === code)?.label ?? code;
+}
+
+function getStoredPageTranslationRules(stored) {
+  if (Array.isArray(stored.pageTranslationRules) && stored.pageTranslationRules.length) {
+    return normalizePageTranslationRules(stored.pageTranslationRules);
+  }
+
+  const legacySourceLanguage = normalizeLanguage(
+    stored.sourceLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+  );
+  const legacyTargetLanguage = normalizeLanguage(
+    stored.targetLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+  );
+  const additionalTargetLanguages = Array.isArray(stored.additionalTargetLanguages)
+    ? stored.additionalTargetLanguages
+    : [];
+
+  return normalizePageTranslationRules([
+    { sourceLanguage: legacySourceLanguage, targetLanguage: legacyTargetLanguage },
+    ...additionalTargetLanguages.map((targetLanguage) => ({
+      sourceLanguage: legacySourceLanguage,
+      targetLanguage
+    }))
+  ]);
+}
+
+function normalizePageTranslationRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) {
+    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  }
+
+  const normalized = rules
+    .map((rule) => ({
+      sourceLanguage: normalizeLanguage(
+        rule?.sourceLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+      ),
+      targetLanguage: normalizeLanguage(
+        rule?.targetLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+      )
+    }))
+    .filter((rule, index, array) => {
+      return array.findIndex((entry) => {
+        return entry.sourceLanguage === rule.sourceLanguage && entry.targetLanguage === rule.targetLanguage;
+      }) === index;
+    })
+    .slice(0, 3);
+
+  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+}
+
+function normalizePageTranslationMode(value) {
+  return value === "entire-page" ? "entire-page" : TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode;
+}
+
+function getPopupSummary(hostname, mode, rules) {
+  if (mode === "entire-page") {
+    const targets = rules
+      .map((rule) => rule.targetLanguage)
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .map(getLanguageLabel)
+      .join(" / ");
+    return `${hostname} will translate the entire page to ${targets}.`;
+  }
+
+  return `${hostname} is set to translate ${rules
+    .map((rule) => `${getLanguageLabel(rule.sourceLanguage)} -> ${getLanguageLabel(rule.targetLanguage)}`)
+    .join(" | ")}.`;
 }

@@ -1,15 +1,17 @@
 const browserApi = typeof browser !== "undefined" ? browser : chrome;
 
 async function ensureDefaults() {
-  const stored = await browserApi.storage.sync.get(TRANSLATOR_DEFAULT_SETTINGS);
+  const stored = await browserApi.storage.sync.get(null);
+  const pageTranslationRules = getStoredPageTranslationRules(stored);
   await browserApi.storage.sync.set({
     sites: Array.isArray(stored.sites) ? stored.sites : TRANSLATOR_DEFAULT_SETTINGS.sites,
     autoTranslate: stored.autoTranslate !== false,
-    sourceLanguage: normalizeLanguage(stored.sourceLanguage, TRANSLATOR_DEFAULT_SETTINGS.sourceLanguage),
-    targetLanguage: normalizeLanguage(stored.targetLanguage, TRANSLATOR_DEFAULT_SETTINGS.targetLanguage),
+    pageTranslationMode: normalizePageTranslationMode(stored.pageTranslationMode),
+    pageTranslationRules,
+    showOriginalOnTranslatedSelection: stored.showOriginalOnTranslatedSelection !== false,
     selectionTargetLanguage: normalizeLanguage(
       stored.selectionTargetLanguage,
-      normalizeLanguage(stored.targetLanguage, TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage)
+      pageTranslationRules[0]?.targetLanguage ?? TRANSLATOR_DEFAULT_SETTINGS.selectionTargetLanguage
     )
   });
 }
@@ -37,19 +39,30 @@ browserApi.runtime.onMessage.addListener((message, sender) => {
 });
 
 async function translateBatch(payload) {
-  const texts = Array.isArray(payload?.texts) ? payload.texts : [];
-  const sourceLanguage = normalizeLanguage(payload?.sourceLanguage, TRANSLATOR_DEFAULT_SETTINGS.sourceLanguage);
-  const targetLanguage = normalizeLanguage(payload?.targetLanguage, TRANSLATOR_DEFAULT_SETTINGS.targetLanguage);
-  if (!texts.length) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
     return { translations: [] };
   }
 
   const translations = await Promise.all(
-    texts.map(async (text) => {
-      const result = await translateText(text, sourceLanguage, targetLanguage);
-      return result.translation;
+    items.map(async (item) => {
+      const text = typeof item?.text === "string" ? item.text.trim() : "";
+      if (!text) {
+        return "";
+      }
+
+      const sourceLanguage = normalizeSourceLanguage(item?.sourceLanguage);
+      const targetLanguages = normalizeTargetLanguages(item?.targetLanguages, sourceLanguage);
+      const translatedVersions = await Promise.all(
+        targetLanguages.map(async (targetLanguage) => {
+          const result = await translateText(text, sourceLanguage, targetLanguage);
+          return result.translation;
+        })
+      );
+      return combineTranslations(translatedVersions);
     })
   );
+
   return { translations };
 }
 
@@ -104,4 +117,99 @@ function flattenSegments(segments) {
 function normalizeLanguage(value, fallback) {
   const validCodes = TRANSLATOR_LANGUAGES.map((language) => language.code);
   return validCodes.includes(value) ? value : fallback;
+}
+
+function normalizeSourceLanguage(value) {
+  return value === "auto"
+    ? "auto"
+    : normalizeLanguage(value, TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage);
+}
+
+function normalizeTargetLanguages(values, sourceLanguage) {
+  if (!Array.isArray(values) || !values.length) {
+    const fallbackTarget = TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage;
+    return [sourceLanguage === fallbackTarget ? getFallbackTarget(sourceLanguage) : fallbackTarget];
+  }
+
+  const validCodes = new Set(TRANSLATOR_LANGUAGES.map((language) => language.code));
+  const normalized = values
+    .filter((value) => validCodes.has(value))
+    .filter((value) => sourceLanguage === "auto" || value !== sourceLanguage)
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .slice(0, 3);
+
+  return normalized.length ? normalized : [TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage];
+}
+
+function getStoredPageTranslationRules(stored) {
+  if (Array.isArray(stored.pageTranslationRules) && stored.pageTranslationRules.length) {
+    return normalizePageTranslationRules(stored.pageTranslationRules);
+  }
+
+  const legacySourceLanguage = normalizeLanguage(
+    stored.sourceLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+  );
+  const legacyTargetLanguage = normalizeLanguage(
+    stored.targetLanguage,
+    TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+  );
+  const additionalTargetLanguages = Array.isArray(stored.additionalTargetLanguages)
+    ? stored.additionalTargetLanguages
+    : [];
+
+  return normalizePageTranslationRules([
+    { sourceLanguage: legacySourceLanguage, targetLanguage: legacyTargetLanguage },
+    ...additionalTargetLanguages.map((targetLanguage) => ({
+      sourceLanguage: legacySourceLanguage,
+      targetLanguage
+    }))
+  ]);
+}
+
+function normalizePageTranslationRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) {
+    return [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+  }
+
+  const normalized = rules
+    .map((rule) => ({
+      sourceLanguage: normalizeLanguage(
+        rule?.sourceLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].sourceLanguage
+      ),
+      targetLanguage: normalizeLanguage(
+        rule?.targetLanguage,
+        TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules[0].targetLanguage
+      )
+    }))
+    .map((rule) => {
+      if (rule.sourceLanguage === rule.targetLanguage) {
+        return {
+          sourceLanguage: rule.sourceLanguage,
+          targetLanguage: getFallbackTarget(rule.sourceLanguage)
+        };
+      }
+      return rule;
+    })
+    .filter((rule, index, array) => {
+      return array.findIndex((entry) => {
+        return entry.sourceLanguage === rule.sourceLanguage && entry.targetLanguage === rule.targetLanguage;
+      }) === index;
+    })
+    .slice(0, 3);
+
+  return normalized.length ? normalized : [...TRANSLATOR_DEFAULT_SETTINGS.pageTranslationRules];
+}
+
+function normalizePageTranslationMode(value) {
+  return value === "entire-page" ? "entire-page" : TRANSLATOR_DEFAULT_SETTINGS.pageTranslationMode;
+}
+
+function combineTranslations(translations) {
+  return translations.filter(Boolean).join(" / ");
+}
+
+function getFallbackTarget(sourceLanguage) {
+  return sourceLanguage === "en" ? "ko" : "en";
 }

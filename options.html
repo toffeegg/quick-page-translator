@@ -10,44 +10,87 @@
   <main class="settings-shell">
     <section class="panel">
       <header class="header">
-        <h1>Quick Page Translator</h1>
-        <p class="intro">Pick a language pair, choose the sites, and use <kbd>Ctrl</kbd> + highlight for instant translation.</p>
+        <p class="eyebrow">Quick Page Translator</p>
+        <h1>Translation settings</h1>
+        <p class="intro">Choose how pages translate, manage saved websites, and fine-tune what Ctrl + highlight shows.</p>
       </header>
 
-      <section class="group">
+      <section class="group compact-group">
         <label class="toggle-row">
           <span>Auto-translate saved sites</span>
           <input id="autoTranslate" type="checkbox">
         </label>
       </section>
 
-      <section class="group language-grid">
-        <label class="field">
-          <span>From</span>
-          <select id="sourceLanguage"></select>
-        </label>
-        <label class="field">
-          <span>To</span>
-          <select id="targetLanguage"></select>
-        </label>
-        <label class="field field-wide">
-          <span>Ctrl + highlight target</span>
-          <select id="selectionTargetLanguage"></select>
-        </label>
-      </section>
-
-      <section class="group">
-        <form id="siteForm" class="site-form">
-          <div class="form-row">
-            <input id="siteInput" type="text" placeholder="example.kr or *.example.com" autocomplete="off">
-            <button type="submit">Add</button>
+      <section class="settings-grid">
+        <section class="settings-card">
+          <div class="section-head">
+            <h2>Page Translation</h2>
+            <p>Set how the extension translates page content.</p>
           </div>
-        </form>
-        <div class="list-header">
-          <span>Websites</span>
-          <button id="clearAll" type="button" class="secondary">Clear</button>
-        </div>
-        <ul id="siteList" class="site-list"></ul>
+          <div class="language-grid">
+            <div class="field field-wide">
+              <span>Page translation mode</span>
+              <select id="pageTranslationMode">
+                <option value="specific-languages">Specific languages</option>
+                <option value="entire-page">Entire web page</option>
+              </select>
+            </div>
+            <div class="field field-wide">
+              <span>Page translation targets</span>
+              <div id="pageTranslationRules" class="page-rule-list"></div>
+              <button id="addPageTarget" type="button" class="secondary add-rule-button">Add page target</button>
+              <p class="field-note">Add up to 3 translation rows. Specific languages mode translates matching source text. Entire web page mode translates the whole page into the selected target languages.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <h2>Highlight Behavior</h2>
+            <p>Choose what Ctrl + highlight returns.</p>
+          </div>
+          <div class="language-grid">
+            <label class="field field-wide">
+              <span>Ctrl + highlight target</span>
+              <select id="selectionTargetLanguage"></select>
+            </label>
+            <label class="toggle-row inset-row">
+              <span>Show original text when highlighting translated page text</span>
+              <input id="showOriginalOnTranslatedSelection" type="checkbox">
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <h2>Saved Websites</h2>
+            <p>Only saved sites auto-translate.</p>
+          </div>
+          <form id="siteForm" class="site-form">
+            <div class="form-row">
+              <input id="siteInput" type="text" placeholder="example.kr or *.example.com" autocomplete="off">
+              <button type="submit">Add</button>
+            </div>
+          </form>
+          <div class="list-header">
+            <span>Websites</span>
+            <button id="clearAll" type="button" class="secondary">Clear</button>
+          </div>
+          <ul id="siteList" class="site-list"></ul>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <h2>Import / Export</h2>
+            <p>Back up or restore websites and translator preferences.</p>
+          </div>
+          <div class="tool-row">
+            <button id="exportSettings" type="button" class="secondary">Export settings</button>
+            <button id="importSettings" type="button" class="secondary">Import settings</button>
+            <input id="importFile" type="file" accept="application/json" hidden>
+          </div>
+        </section>
       </section>
 
       <p id="status" class="status" aria-live="polite"></p>
