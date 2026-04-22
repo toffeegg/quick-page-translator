@@ -3,7 +3,7 @@
   "name": "Quick Page Translator",
   "version": "1.0.0",
   "author": "toffeeplaysgg@gmail.com",
-  "description": "Automatically translates configured websites using your chosen language pair and supports Ctrl plus highlight translation.",
+  "description": "Auto-translates websites on demand.",
   "icons": {
     "48": "icon.png",
     "96": "icon.png"
@@ -43,7 +43,7 @@
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "korean-to-english-auto-translator@example.com"
+      "id": "quick-page-translator@example.com"
     }
   }
 }

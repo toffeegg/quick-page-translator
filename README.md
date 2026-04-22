@@ -1,6 +1,6 @@
 # Quick Page Translator
 
-Quick Page Translator is a Firefox extension that auto-translates saved websites and gives you a fast `Ctrl` + highlight tool for checking translated or original text on demand.
+Quick Page Translator is a Firefox extension that auto-translates websites on demand.
 
 ## Current features
 
