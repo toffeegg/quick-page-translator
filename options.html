@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Translator Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="settings-shell">
+    <section class="panel">
+      <header class="header">
+        <h1>Quick Page Translator</h1>
+        <p class="intro">Pick a language pair, choose the sites, and use <kbd>Ctrl</kbd> + highlight for instant translation.</p>
+      </header>
+
+      <section class="group">
+        <label class="toggle-row">
+          <span>Auto-translate saved sites</span>
+          <input id="autoTranslate" type="checkbox">
+        </label>
+      </section>
+
+      <section class="group language-grid">
+        <label class="field">
+          <span>From</span>
+          <select id="sourceLanguage"></select>
+        </label>
+        <label class="field">
+          <span>To</span>
+          <select id="targetLanguage"></select>
+        </label>
+        <label class="field field-wide">
+          <span>Ctrl + highlight target</span>
+          <select id="selectionTargetLanguage"></select>
+        </label>
+      </section>
+
+      <section class="group">
+        <form id="siteForm" class="site-form">
+          <div class="form-row">
+            <input id="siteInput" type="text" placeholder="example.kr or *.example.com" autocomplete="off">
+            <button type="submit">Add</button>
+          </div>
+        </form>
+        <div class="list-header">
+          <span>Websites</span>
+          <button id="clearAll" type="button" class="secondary">Clear</button>
+        </div>
+        <ul id="siteList" class="site-list"></ul>
+      </section>
+
+      <p id="status" class="status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <script src="constants.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

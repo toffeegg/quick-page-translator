@@ -1,0 +1,49 @@
+{
+  "manifest_version": 2,
+  "name": "Quick Page Translator",
+  "version": "1.0.0",
+  "author": "toffeeplaysgg@gmail.com",
+  "description": "Automatically translates configured websites using your chosen language pair and supports Ctrl plus highlight translation.",
+  "icons": {
+    "48": "icon.png",
+    "96": "icon.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "<all_urls>",
+    "https://translate.googleapis.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "constants.js",
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "Quick Page Translator",
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "constants.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "korean-to-english-auto-translator@example.com"
+    }
+  }
+}

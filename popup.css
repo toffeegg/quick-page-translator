@@ -1,0 +1,127 @@
+:root {
+  color-scheme: dark;
+  --bg: #050505;
+  --panel: #101010;
+  --panel-edge: #1d1d1d;
+  --text: #f4f4f2;
+  --muted: #9b9b97;
+  --accent: #f4f4f2;
+  --accent-text: #090909;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 286px;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(180deg, #0a0a0a 0%, var(--bg) 100%);
+  color: var(--text);
+}
+
+.popup-shell {
+  padding: 15px;
+  margin: 10px;
+  background: rgba(16, 16, 16, 0.92);
+  border: 1px solid var(--panel-edge);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.label {
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.hostname {
+  display: inline-block;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 0.79rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  margin-top: 10px;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.action-row:has(#refreshPage:not([hidden])) {
+  grid-template-columns: 1fr 1fr;
+}
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+  box-shadow: 0 10px 24px rgba(255, 255, 255, 0.08);
+}
+
+button:hover {
+  opacity: 0.96;
+  transform: translateY(-1px);
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+
+button.secondary {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+}
+
+button.danger {
+  background: transparent;
+  color: #ff9b9b;
+  border-color: rgba(255, 155, 155, 0.28);
+  box-shadow: none;
+}
+
+.action-row button,
+.actions button {
+  margin-top: 0;
+}

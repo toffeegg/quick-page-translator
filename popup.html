@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Korean Translator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup-shell">
+    <p class="label">Quick Page Translator</p>
+    <h1>Instant page translation</h1>
+    <p id="summary">Loading current tab status…</p>
+    <p id="hostname" class="hostname" hidden></p>
+    <button id="toggleSite" type="button" hidden></button>
+    <div class="action-row">
+      <button id="toggleAutoTranslate" type="button" class="secondary"></button>
+      <button id="refreshPage" type="button" class="secondary" hidden>Refresh page</button>
+    </div>
+    <div class="actions">
+      <button id="openSettings" type="button" class="secondary">Open settings</button>
+    </div>
+  </main>
+
+  <script src="constants.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
