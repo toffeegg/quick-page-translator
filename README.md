@@ -1,4 +1,4 @@
-# Quick Page Translator
+# Quick Page Translator <img src="https://github.com/toffeegg/quick-page-translator/blob/main/icon.png" width="32" height="32" />
 
 Quick Page Translator is a Firefox extension that auto-translates websites on demand.
 
