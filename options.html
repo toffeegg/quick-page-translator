@@ -21,6 +21,7 @@
           <button type="button" class="sidebar-tab" data-tab="highlight-behavior">Highlight Behavior</button>
           <button type="button" class="sidebar-tab" data-tab="saved-websites">Saved Websites</button>
           <button type="button" class="sidebar-tab" data-tab="import-export">Import / Export</button>
+          <button type="button" class="sidebar-tab" data-tab="about">About</button>
         </aside>
 
         <section class="settings-panels">
@@ -90,6 +91,30 @@
             <button id="exportSettings" type="button" class="secondary">Export settings</button>
             <button id="importSettings" type="button" class="secondary">Import settings</button>
             <input id="importFile" type="file" accept="application/json" hidden>
+          </div>
+          </section>
+
+          <section class="settings-card settings-panel" data-panel="about" hidden>
+          <div class="section-head">
+            <h2>About</h2>
+            <p>Project information and important links.</p>
+          </div>
+          <div class="about-stack">
+            <div class="about-hero">
+              <p class="about-product">Quick Page Translator</p>
+              <p class="about-version">Version <span id="extensionVersion">-</span></p>
+            </div>
+            <div class="about-grid">
+              <div class="about-item">
+                <span>Privacy policy</span>
+                <p>This project stores your saved websites and translator settings in browser sync storage. It sends text you choose to translate to the public Google Translate web endpoint so translations can be returned.</p>
+                <p><a href="https://github.com/toffeegg/quick-page-translator/blob/main/PRIVACY_POLICY.md" target="_blank" rel="noreferrer">View privacy policy</a></p>
+              </div>
+              <div class="about-item">
+                <span>GitHub page</span>
+                <p><a href="https://github.com/toffeegg/quick-page-translator" target="_blank" rel="noreferrer">github.com/toffeegg/quick-page-translator</a></p>
+              </div>
+            </div>
           </div>
           </section>
         </section>

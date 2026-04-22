@@ -6,6 +6,7 @@ const STATUS_MESSAGE_DURATION = 3200;
 const elements = {
   sidebarTabs: Array.from(document.querySelectorAll(".sidebar-tab")),
   settingsPanels: Array.from(document.querySelectorAll(".settings-panel")),
+  extensionVersion: document.getElementById("extensionVersion"),
   pageTranslationMode: document.getElementById("pageTranslationMode"),
   pageTranslationRulesField: document.getElementById("pageTranslationRulesField"),
   pageTranslationRules: document.getElementById("pageTranslationRules"),
@@ -39,6 +40,7 @@ initialize().catch((error) => {
 
 async function initialize() {
   populateLanguageSelects();
+  elements.extensionVersion.textContent = browserApi.runtime.getManifest().version;
 
   const stored = await browserApi.storage.sync.get(null);
   const pageTranslationRules = getStoredPageTranslationRules(stored);

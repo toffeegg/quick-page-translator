@@ -133,6 +133,68 @@ body {
   line-height: 1.45;
 }
 
+.about-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.about-hero {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.about-product,
+.about-version,
+.about-item p {
+  margin: 0;
+}
+
+.about-product {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.about-version {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.about-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.about-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.about-item span {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.about-item a {
+  color: #9ad0ff;
+  text-decoration: none;
+}
+
+.about-item a:hover {
+  text-decoration: underline;
+}
+
 .toggle-row,
 .form-row,
 .list-header,
