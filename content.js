@@ -5,6 +5,7 @@ const MAX_TEXT_LENGTH = 450;
 
 let cachedSettings = null;
 let isTranslating = false;
+let pendingTranslationRequested = false;
 let observer = null;
 let translatedNodes = new WeakSet();
 let originalNodeTexts = new WeakMap();
@@ -21,8 +22,8 @@ async function initialize() {
   bindOverlayDismiss();
 
   if (shouldAutoTranslate()) {
-    await translateVisibleDocument();
     startObserving();
+    await requestDocumentTranslation();
   }
 }
 
@@ -82,12 +83,14 @@ function listenForSettingChanges() {
       return;
     }
 
-    if (enabledForSite && !observer) {
+    if (enabledForSite) {
       translatedNodes = new WeakSet();
-      translateVisibleDocument().catch((error) => {
+      if (!observer) {
+        startObserving();
+      }
+      requestDocumentTranslation().catch((error) => {
         console.error("Translation after settings change failed", error);
       });
-      startObserving();
     }
   });
 }
@@ -140,10 +143,12 @@ function matchSitePattern(hostname, pattern) {
 
 async function translateVisibleDocument() {
   if (isTranslating) {
+    pendingTranslationRequested = true;
     return;
   }
 
   isTranslating = true;
+  pendingTranslationRequested = false;
 
   try {
     const textNodes = collectTranslatableNodes(document.body);
@@ -165,13 +170,25 @@ async function translateVisibleDocument() {
         continue;
       }
 
-      const { translations } = await browserApi.runtime.sendMessage({
-        type: "translate-text-batch",
-        payload: { items }
-      });
+      let translations = [];
+      try {
+        const response = await browserApi.runtime.sendMessage({
+          type: "translate-text-batch",
+          payload: { items }
+        });
+        translations = Array.isArray(response?.translations) ? response.translations : [];
+      } catch (error) {
+        console.error("Translation batch failed", error);
+        continue;
+      }
 
       batch.forEach(({ node }, index) => {
         const translated = translations?.[index];
+        if (typeof translated !== "string") {
+          return;
+        }
+
+        translatedNodes.add(node);
         if (translated && translated !== node.textContent.trim()) {
           originalNodeTexts.set(node, node.textContent);
           node.textContent = preserveSpacing(node.textContent, translated);
@@ -182,7 +199,23 @@ async function translateVisibleDocument() {
     console.error("Translation failed", error);
   } finally {
     isTranslating = false;
+    if (pendingTranslationRequested && shouldAutoTranslate()) {
+      scheduleIdleWork(() => {
+        translateVisibleDocument().catch((error) => {
+          console.error("Queued translation failed", error);
+        });
+      });
+    }
   }
+}
+
+async function requestDocumentTranslation() {
+  if (isTranslating) {
+    pendingTranslationRequested = true;
+    return;
+  }
+
+  await translateVisibleDocument();
 }
 
 function collectTranslatableNodes(root) {
@@ -226,7 +259,6 @@ function collectTranslatableNodes(root) {
   let currentNode = walker.nextNode();
 
   while (currentNode) {
-    translatedNodes.add(currentNode);
     const request = getTranslationRequestForText(currentNode.textContent);
     if (request) {
       nodes.push({ node: currentNode, request });
@@ -254,12 +286,12 @@ function preserveSpacing(original, translated) {
 function startObserving() {
   observer = new MutationObserver((mutations) => {
     const hasRelevantChange = mutations.some((mutation) => {
-      return mutation.addedNodes && mutation.addedNodes.length > 0;
+      return mutation.type === "characterData" || (mutation.addedNodes && mutation.addedNodes.length > 0);
     });
 
     if (hasRelevantChange) {
       scheduleIdleWork(() => {
-        translateVisibleDocument().catch((error) => {
+        requestDocumentTranslation().catch((error) => {
           console.error("Deferred translation failed", error);
         });
       });
@@ -268,6 +300,7 @@ function startObserving() {
 
   observer.observe(document.documentElement, {
     childList: true,
+    characterData: true,
     subtree: true
   });
 }
